@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationTitle>RadeonGuard</ApplicationTitle>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="WPF-UI" Version="3.0.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RadeonGuard.Core\RadeonGuard.Core.csproj" />
+    <ProjectReference Include="..\RadeonGuard.Persistence\RadeonGuard.Persistence.csproj" />
+    <ProjectReference Include="..\RadeonGuard.Diagnostics\RadeonGuard.Diagnostics.csproj" />
+  </ItemGroup>
+</Project>

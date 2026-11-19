@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="..\RadeonGuard.AdlxBridge\bin\$(Configuration)\x64\RadeonGuard.AdlxBridge.dll"
+             Condition="Exists('..\RadeonGuard.AdlxBridge\bin\$(Configuration)\x64\RadeonGuard.AdlxBridge.dll')"
+             Link="RadeonGuard.AdlxBridge.dll"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\RadeonGuard.AdlxBridge\bin\Release\x64\RadeonGuard.AdlxBridge.dll"
+             Condition="!Exists('..\RadeonGuard.AdlxBridge\bin\$(Configuration)\x64\RadeonGuard.AdlxBridge.dll') And Exists('..\RadeonGuard.AdlxBridge\bin\Release\x64\RadeonGuard.AdlxBridge.dll')"
+             Link="RadeonGuard.AdlxBridge.dll"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

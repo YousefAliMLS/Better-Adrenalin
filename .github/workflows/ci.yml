@@ -1,0 +1,31 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Checkout AMD ADLX SDK
+        uses: actions/checkout@v4
+        with:
+          repository: GPUOpen-LibrariesAndSDKs/ADLX
+          path: third_party/ADLX
+
+      - name: Build native bridge, solution, and run unit tests
+        shell: pwsh
+        run: .\build.ps1 -Configuration Release

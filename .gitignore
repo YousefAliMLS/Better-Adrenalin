@@ -1,0 +1,31 @@
+# Build outputs
+bin/
+obj/
+dist/
+publish/
+artifacts/
+release/
+TestResults/
+*.user
+*.suo
+.vs/
+
+# Local SQLite databases and runtime logs
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.jsonl
+*.tmp
+
+# External SDK (automatically fetched by build.ps1 from GPUOpen-LibrariesAndSDKs/ADLX)
+third_party/
+
+# Release archives and checksums
+*.zip
+SHA256SUMS.txt
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
