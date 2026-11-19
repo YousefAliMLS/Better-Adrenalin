@@ -59,38 +59,45 @@ if (Test-Path $distDir) {
     Remove-Item -Path $distDir -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-Copy-Item -Path (Join-Path $root "src\RadeonGuard.UI\bin\$Configuration\net8.0-windows\*") -Destination $distDir -Recurse -Force
-Copy-Item -Path (Join-Path $root "src\RadeonGuard.Guardian\bin\$Configuration\net8.0-windows\*") -Destination $distDir -Recurse -Force
+Copy-Item -Path (Join-Path $root "src\RadeonGuard.UI\bin\$Configuration\net8.0-windows\*") -Destination $distDir -Recurse -Force -Exclude "win-x64"
+Copy-Item -Path (Join-Path $root "src\RadeonGuard.Guardian\bin\$Configuration\net8.0-windows\*") -Destination $distDir -Recurse -Force -Exclude "win-x64"
 Write-Host "==> Staged runnable app in $distDir" -ForegroundColor Green
 
 if ($Package) {
     $releaseDir = Join-Path $root "artifacts\release"
     $standaloneDir = Join-Path $releaseDir "standalone-staging"
+    $portableDir = Join-Path $releaseDir "portable-staging"
     if (Test-Path $releaseDir) {
         Remove-Item -Path $releaseDir -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $standaloneDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
 
     Write-Host "==> Publishing self-contained win-x64 release package..." -ForegroundColor Cyan
     & dotnet publish (Join-Path $root "src\RadeonGuard.UI\RadeonGuard.UI.csproj") -c $Configuration -r win-x64 --self-contained true -o $standaloneDir
-    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for RadeonGuard.UI." }
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (self-contained) failed for RadeonGuard.UI." }
 
     & dotnet publish (Join-Path $root "src\RadeonGuard.Guardian\RadeonGuard.Guardian.csproj") -c $Configuration -r win-x64 --self-contained true -o $standaloneDir
-    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for RadeonGuard.Guardian." }
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (self-contained) failed for RadeonGuard.Guardian." }
 
-    Copy-Item -Path (Join-Path $root "LICENSE") -Destination $standaloneDir -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path (Join-Path $root "README.md") -Destination $standaloneDir -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path (Join-Path $root "THIRD_PARTY_NOTICES.md") -Destination $standaloneDir -Force -ErrorAction SilentlyContinue
+    Write-Host "==> Publishing framework-dependent portable win-x64 release package..." -ForegroundColor Cyan
+    & dotnet publish (Join-Path $root "src\RadeonGuard.UI\RadeonGuard.UI.csproj") -c $Configuration --no-self-contained -o $portableDir
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (portable) failed for RadeonGuard.UI." }
 
-    Copy-Item -Path (Join-Path $root "LICENSE") -Destination $distDir -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path (Join-Path $root "README.md") -Destination $distDir -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path (Join-Path $root "THIRD_PARTY_NOTICES.md") -Destination $distDir -Force -ErrorAction SilentlyContinue
+    & dotnet publish (Join-Path $root "src\RadeonGuard.Guardian\RadeonGuard.Guardian.csproj") -c $Configuration --no-self-contained -o $portableDir
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (portable) failed for RadeonGuard.Guardian." }
+
+    foreach ($stageDir in @($standaloneDir, $portableDir, $distDir)) {
+        Copy-Item -Path (Join-Path $root "LICENSE") -Destination $stageDir -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path (Join-Path $root "README.md") -Destination $stageDir -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path (Join-Path $root "THIRD_PARTY_NOTICES.md") -Destination $stageDir -Force -ErrorAction SilentlyContinue
+    }
 
     $standaloneZip = Join-Path $releaseDir "Better-Adrenalin-v$Version-win-x64-standalone.zip"
     $portableZip = Join-Path $releaseDir "Better-Adrenalin-v$Version-win-x64-portable.zip"
 
     Compress-Archive -Path (Join-Path $standaloneDir "*") -DestinationPath $standaloneZip -CompressionLevel Optimal
-    Compress-Archive -Path (Join-Path $distDir "*") -DestinationPath $portableZip -CompressionLevel Optimal
+    Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $portableZip -CompressionLevel Optimal
 
     $hashes = @()
     foreach ($file in @($standaloneZip, $portableZip)) {
