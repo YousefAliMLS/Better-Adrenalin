@@ -253,14 +253,15 @@
                                     </Grid>
                                     <DockPanel Margin="0,12,0,0">
                                         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                            <ui:Button Content="Export Selected (.json)" Command="{Binding ExportSelectedFanProfileCommand}" Margin="0,0,8,0" />
+                                            <ui:Button Content="Export Selected (.json / .xml)" Command="{Binding ExportSelectedFanProfileCommand}" Margin="0,0,8,0" />
                                             <ui:Button Content="Export All (.json)" Command="{Binding ExportAllFanProfilesCommand}" Margin="0,0,8,0" />
-                                            <ui:Button Content="Import &amp; Apply (.json)" Appearance="Secondary" Command="{Binding ImportAndApplyFanProfilesCommand}" />
+                                            <ui:Button Content="Import &amp; Apply (.json / .xml)" Appearance="Secondary" Command="{Binding ImportAndApplyFanProfilesCommand}" />
                                         </StackPanel>
                                         <ui:ToggleSwitch DockPanel.Dock="Right" HorizontalAlignment="Right"
                                                          IsChecked="{Binding AutoStartWithWindows}"
                                                          Content="Keep Applied After PC Restart" />
                                     </DockPanel>
+                                    <TextBlock Text="{Binding FanValidationMessage}" Foreground="#34D399" FontSize="12.5" Margin="0,10,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
@@ -478,7 +479,7 @@
                                         </StackPanel>
                                         <StackPanel>
                                             <TextBlock Text="Optional Fan Profile Override" FontSize="12" Foreground="#9CA3AF" />
-                                            <ComboBox ItemsSource="{Binding FanProfiles}" SelectedValue="{Binding EditGameFanOverrideId}" SelectedValuePath="FanProfileId" DisplayMemberPath="Name" Margin="0,4,0,0" />
+                                            <ComboBox ItemsSource="{Binding GameFanOverrideOptions}" SelectedValue="{Binding EditGameFanOverrideId}" SelectedValuePath="FanProfileId" DisplayMemberPath="DisplayName" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </UniformGrid>
 
@@ -541,7 +542,7 @@
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                                 <ui:Button Content="Create Atomic Backup Now" Appearance="Primary" Command="{Binding CreateBackupNowCommand}" Margin="0,0,8,0" />
                                 <ui:Button Content="Export Bundle (.json)" Command="{Binding ExportBundleCommand}" Margin="0,0,8,0" />
-                                <ui:Button Content="Import Bundle (.json)" Command="{Binding ImportBundleCommand}" Margin="0,0,8,0" />
+                                <ui:Button Content="Import (.json / .xml)" Command="{Binding ImportBundleCommand}" Margin="0,0,8,0" />
                                 <ui:Button Content="Refresh" Command="{Binding RefreshHistoryAndBackupsCommand}" />
                             </StackPanel>
                             <TextBlock Text="{Binding HistoryFeedback}" Foreground="#34D399" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="12,0,0,0" />

@@ -107,6 +107,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     // Game Profiles & Denylist
     public ObservableCollection<GameProfile> GameProfiles { get; } = new();
+    public ObservableCollection<GameFanOverrideOption> GameFanOverrideOptions { get; } = new();
     [ObservableProperty] private GameProfile? _selectedGameProfile;
     [ObservableProperty] private string _editGameTitle = string.Empty;
     [ObservableProperty] private string _editGameExePath = string.Empty;
@@ -277,7 +278,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         var fans = await _repo.GetFanProfilesAsync().ConfigureAwait(true);
         FanProfiles.Clear();
-        foreach (var f in fans) FanProfiles.Add(f);
+        GameFanOverrideOptions.Clear();
+        GameFanOverrideOptions.Add(new GameFanOverrideOption(string.Empty, "(None - Use Active Global Fan Profile)"));
+        foreach (var f in fans)
+        {
+            FanProfiles.Add(f);
+            GameFanOverrideOptions.Add(new GameFanOverrideOption(f.FanProfileId, f.Name));
+        }
         if (SelectedFanProfile is null || FanProfiles.All(f => f.FanProfileId != SelectedFanProfile.FanProfileId))
         {
             SelectedFanProfile = FanProfiles.FirstOrDefault(f => f.FanProfileId == targetFanId)
@@ -409,14 +416,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         string safeName = string.Concat(profile.Name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            Filter = "RadeonGuard Fan Profile (*.json)|*.json",
+            Filter = "RadeonGuard JSON (*.json)|*.json|AMD WattMan XML (*.xml)|*.xml",
             FileName = $"{safeName}.fanprofile.json"
         };
         if (dlg.ShowDialog() != true) return;
 
-        await _portability.ExportFanProfilesAsync([profile], dlg.FileName).ConfigureAwait(true);
-        FanValidationHasErrors = false;
-        FanValidationMessage = $"Exported fan profile '{profile.Name}' (SHA-256 verified) to {Path.GetFileName(dlg.FileName)}.";
+        if (Path.GetExtension(dlg.FileName).Equals(".xml", StringComparison.OrdinalIgnoreCase) || dlg.FilterIndex == 2)
+        {
+            await _portability.ExportFanProfileToXmlAsync(profile, dlg.FileName).ConfigureAwait(true);
+            FanValidationHasErrors = false;
+            FanValidationMessage = $"Exported fan profile '{profile.Name}' as AMD WattMan XML to {Path.GetFileName(dlg.FileName)}.";
+        }
+        else
+        {
+            await _portability.ExportFanProfilesAsync([profile], dlg.FileName).ConfigureAwait(true);
+            FanValidationHasErrors = false;
+            FanValidationMessage = $"Exported fan profile '{profile.Name}' (SHA-256 verified JSON) to {Path.GetFileName(dlg.FileName)}.";
+        }
     }
 
     [RelayCommand]
@@ -440,7 +456,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "RadeonGuard Fan Profile / Bundle (*.json)|*.json"
+            Filter = "Profile Files (*.json;*.xml)|*.json;*.xml|RadeonGuard JSON / XML-JSON (*.json)|*.json|AMD Adrenalin XML (*.xml)|*.xml"
         };
         if (dlg.ShowDialog() != true) return;
 
@@ -661,7 +677,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         EditGameExePath = value.Executables.FirstOrDefault(e => e.Role == ExecutableRole.PrimaryRenderer)?.ExeFullPath
                           ?? value.Executables.FirstOrDefault()?.ExeFullPath ?? string.Empty;
         EditGameTuningId = value.TuningProfileId;
-        EditGameFanOverrideId = value.OverrideFanProfileId;
+        EditGameFanOverrideId = value.OverrideFanProfileId ?? string.Empty;
         EditGameEnabled = value.IsEnabled;
         EditGameLockRunning = value.LockWhileProcessRunning;
         EditGameZeroRpmOverride = value.ZeroRpmOverride;
@@ -752,6 +768,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             Executables = exes
         };
         await _repo.SaveGameProfileAsync(updated, "UserEdit").ConfigureAwait(true);
+        GuardianIpcClient.EnsureGuardianStarted();
         await _ipc.SendAsync("RefreshActiveGame").ConfigureAwait(true);
         GameImportFeedback = $"Saved game profile '{updated.Title}' (Zero RPM: {EditGameZeroRpmOverride}).";
         await LoadAllDataAsync().ConfigureAwait(true);
@@ -843,7 +860,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "RadeonGuard Bundle (*.json)|*.json"
+            Filter = "Profile / Bundle Files (*.json;*.xml)|*.json;*.xml|RadeonGuard Bundle (*.json)|*.json|AMD Adrenalin XML (*.xml)|*.xml"
         };
         if (dlg.ShowDialog() != true) return;
         try
@@ -938,3 +955,4 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 }
 
 public sealed record ZeroRpmOverrideOption(ZeroRpmOverrideMode Mode, string DisplayName);
+public sealed record GameFanOverrideOption(string FanProfileId, string DisplayName);

@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using RadeonGuard.Diagnostics;
@@ -6,8 +7,30 @@ namespace RadeonGuard.UI;
 
 public partial class App : System.Windows.Application
 {
+    private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _activateEvent;
+    private RegisteredWaitHandle? _activateWaitHandle;
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        _singleInstanceMutex = new Mutex(true, @"Local\RadeonGuard.UI.Singleton", out bool createdNew);
+        _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\RadeonGuard.UI.ActivateEvent");
+        if (!createdNew)
+        {
+            try { _activateEvent.Set(); } catch { }
+            _activateEvent.Dispose();
+            _singleInstanceMutex.Dispose();
+            Shutdown(0);
+            return;
+        }
+
+        _activateWaitHandle = ThreadPool.RegisterWaitForSingleObject(
+            _activateEvent,
+            (_, _) => Dispatcher.BeginInvoke(() => (MainWindow as MainWindow)?.RestoreFromTray()),
+            null,
+            -1,
+            false);
+
         var log = FlightRecorder.CreateLogger();
 
         DispatcherUnhandledException += (_, args) =>
@@ -31,5 +54,17 @@ public partial class App : System.Windows.Application
         };
 
         base.OnStartup(e);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _activateWaitHandle?.Unregister(null);
+        _activateEvent?.Dispose();
+        if (_singleInstanceMutex is not null)
+        {
+            try { _singleInstanceMutex.ReleaseMutex(); } catch { }
+            _singleInstanceMutex.Dispose();
+        }
+        base.OnExit(e);
     }
 }

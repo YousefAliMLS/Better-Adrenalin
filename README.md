@@ -30,12 +30,12 @@ Better-Adrenalin separates configuration storage, hardware safety validation, ba
 - **Interactive 5-Point Fan Curve Editor:** Drag points or type exact Temperature (C) and Fan Speed (%) values evaluated against GPU Hotspot (Junction) temperature.
 - **Zero RPM & Minimum Acoustic Limit:** Toggle Zero RPM and configure minimum acoustic frequency limits where supported by the GPU.
 - **Sticky Global Profile Across Reboots:** Applying a fan profile persists `ActiveGlobalFanId` in SQLite and registers `RadeonGuard.Guardian.exe` under the current user's Windows startup entry (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\RadeonGuardGuardian`, toggleable in Fan Control) so your chosen curve automatically restores after Windows restarts.
-- **Create, Duplicate, Export & Import + Apply:** Create or duplicate fan profiles, export single profiles or all fan profiles to SHA-256 checksummed JSON files, and import and apply profiles directly to the GPU with hardware validation.
+- **Create, Duplicate, Export & Import + Apply:** Create or duplicate fan profiles, export single profiles to SHA-256 checksummed JSON or AMD WattMan XML (`.xml`), export all fan profiles to JSON, and import and apply RadeonGuard JSON, AMD WattMan XML, or XML-converted JSON profiles directly to the GPU with hardware validation.
 
 ### Deterministic Game Profiles & Per-Game Zero RPM Control
-- **Alt-Tab Immune Process Tracking:** Tracks `PrimaryRenderer` executables instead of launcher bootstrappers, with a 3-second exit debounce before restoring global settings.
+- **Alt-Tab Immune Windowed Process Tracking:** Tracks `PrimaryRenderer` executables with active top-level window detection (`EnumWindows` / `MainWindowHandle`), releasing game profiles if a closed game (such as Fortnite/Unreal Engine with EasyAntiCheat) leaves a hung windowless background process behind.
 - **Non-Game Denylist:** Built-in exclusion list (`python.exe`, `chrome.exe`, `msedge.exe`, `discord.exe`, `obs64.exe`, Office apps, terminals) plus custom user denylist entries prevent background tools from hijacking GPU profiles.
-- **Per-Game Zero RPM Override:** Set each game profile independently to `Inherit from Fan Profile`, `Force Enabled (Zero RPM On)`, or `Force Disabled (Fans Always Spin)` to eliminate repetitive fan start/stop cycling on lighter titles, automatically restoring the global Zero RPM state when the game closes.
+- **Per-Game Zero RPM Override & Clearable Fan Override:** Set each game profile independently to `Inherit from Fan Profile`, `Force Enabled (Zero RPM On)`, or `Force Disabled (Fans Always Spin)` to eliminate repetitive fan start/stop cycling on lighter titles, and optionally clear per-game fan overrides back to `(None - Use Active Global Fan Profile)`.
 - **Launcher Discovery & Read-Only Adrenalin Import:** Scans Steam, Epic Games, and Ubisoft Connect installs, and optionally reads Adrenalin's `gmdb.blb` read-only to recover saved OverDrive8 fan curves and game entries while filtering false positives.
 
 ### Safe GPU Tuning & 3D Settings
@@ -44,7 +44,7 @@ Better-Adrenalin separates configuration storage, hardware safety validation, ba
 - **Supported 3D Settings:** Configure AMD Anti-Lag, Radeon Chill (Min/Max FPS), Image Sharpening, Enhanced Sync, and Frame Rate Target Control (FRTC).
 
 ### Reliability, Drift Watchdog & Recovery
-- **3-Second Drift Watchdog:** Periodically reads back live hardware fan and tuning state from ADLX and re-applies your active profile if external software resets it (`AutoReapply` or `AlertOnly` policy).
+- **3-Second Drift & Stuck-ZeroRPM Watchdog:** Periodically reads back live hardware fan and tuning state from ADLX, re-applies your active profile if external software resets it (`AutoReapply` or `AlertOnly` policy), and automatically re-arms Zero RPM if fans remain stuck spinning above 100 RPM during cool idle (`Edge <= 45 C`, `Hotspot <= 48 C`, `Usage <= 10%`).
 - **Power Resume & Boot Retry:** Restores active profiles on Windows sleep/resume events and automatically retries ADLX initialization if the Guardian daemon starts before the GPU driver finishes initializing after boot.
 - **Immutable Revision History & SHA-256 Backups:** Every save writes an immutable snapshot in `PROFILE_REVISIONS` for one-click rollback, alongside atomic SQLite `VACUUM INTO` backups verified with SHA-256 checksums and automatic recovery if the primary database is corrupted.
 - **Diagnostics & Audit Log:** Detects conflicting GPU utilities (such as AMD Adrenalin or MSI Afterburner), Windows Fast Startup (`HiberbootEnabled`), AMD service statuses, and recent Windows Event ID 4101 display driver TDR resets.
@@ -68,8 +68,8 @@ Better-Adrenalin separates configuration storage, hardware safety validation, ba
 
 1. Go to the [Releases](https://github.com/YousefAliMLS/Better-Adrenalin/releases) page.
 2. Download one of the release archives:
-   - `Better-Adrenalin-v1.0.0-win-x64-standalone.zip` (recommended; self-contained, no runtime install required)
-   - `Better-Adrenalin-v1.0.0-win-x64-portable.zip` (smaller download if .NET 8 Desktop Runtime x64 is already installed)
+   - `Better-Adrenalin-v1.0.1-win-x64-standalone.zip` (recommended; self-contained, no runtime install required)
+   - `Better-Adrenalin-v1.0.1-win-x64-portable.zip` (smaller download if .NET 8 Desktop Runtime x64 is already installed)
 3. Extract the archive to a permanent folder (for example, `C:\Tools\Better-Adrenalin\`) rather than running directly from a temporary folder, especially if you enable **Keep Applied After PC Restart**.
 4. Launch `RadeonGuard.UI.exe`. It automatically starts `RadeonGuard.Guardian.exe` in the background and connects via Named Pipe IPC.
 
@@ -105,8 +105,8 @@ To run a non-destructive hardware capability probe on your GPU:
    - Click **+ New** (or **Duplicate**), adjust the 5-point curve and Zero RPM setting, and click **Save & Apply to GPU**.
    - Ensure **Keep Applied After PC Restart** is enabled so `RadeonGuard.Guardian.exe` automatically re-applies your curve at Windows logon.
 2. **Export or Import Fan Profiles:**
-   - Use **Export Selected (.json)** or **Export All (.json)** in **Fan Control** to save SHA-256 verified profile files.
-   - Use **Import & Apply (.json)** to validate, save, and immediately activate an exported fan profile or full bundle.
+   - Use **Export Selected (.json / .xml)** or **Export All (.json)** in **Fan Control** to save SHA-256 verified JSON or AMD WattMan XML profile files.
+   - Use **Import & Apply (.json / .xml)** to validate, save, and immediately activate an exported fan profile, AMD WattMan XML, XML-converted JSON file, or full bundle.
 3. **Configure Game Profiles and Per-Game Zero RPM:**
    - Open **Game Profiles**, click **Scan Steam / Epic / Ubisoft** or **Add Game Exe...** (or **Import Adrenalin gmdb.blb**).
    - Assign a Tuning Profile, optional Fan Profile Override, and **Per-Game Zero RPM Mode** (set to **Force Disabled (Fans Always Spin)** on light games to stop fan cycling).

@@ -65,7 +65,10 @@ public sealed class MockGpuHardwareAdapter : IGpuHardwareAdapter
     public string AdlxVersionString => "1.4.0.121 (Mock)";
     public double SimulatedEdgeTempC { get; set; } = 42.0;
     public double SimulatedHotspotTempC { get; set; } = 51.0;
+    public double SimulatedGpuUsagePercent { get; set; } = 18.5;
     public bool SimulateApplyFailure { get; set; }
+    public bool SimulateStuckFanSpin { get; set; }
+    private bool _sawZeroRpmPulseOff;
     public int ApplyFanCallCount { get; private set; }
     public int ApplyTuningCallCount { get; private set; }
 
@@ -84,8 +87,8 @@ public sealed class MockGpuHardwareAdapter : IGpuHardwareAdapter
     public Task<GpuTelemetrySample?> GetCurrentMetricsAsync(int gpuIndex, CancellationToken ct = default) =>
         Task.FromResult<GpuTelemetrySample?>(new GpuTelemetrySample(
             DateTimeOffset.UtcNow, Environment.TickCount64,
-            18.5, 1450, 2000, SimulatedEdgeTempC, SimulatedHotspotTempC, 34.0,
-            45.0, 58.0, _fanState.ZeroRpmEnabled && SimulatedHotspotTempC < 55 ? 0 : 1350,
+            SimulatedGpuUsagePercent, 1450, 2000, SimulatedEdgeTempC, SimulatedHotspotTempC, 34.0,
+            45.0, 58.0, SimulateStuckFanSpin ? 950 : (_fanState.ZeroRpmEnabled && SimulatedHotspotTempC < 55 ? 0 : 1350),
             2450, 912, 0x3FF));
 
     public Task<GpuTuningCapabilities?> GetTuningCapabilitiesAsync(int gpuIndex, CancellationToken ct = default) =>
@@ -112,6 +115,18 @@ public sealed class MockGpuHardwareAdapter : IGpuHardwareAdapter
             return Task.FromResult(new HardwareApplyResult(false, "FAILED", AdlxResultCode.Fail, "Simulated ADLX write failure.", "{}"));
         }
         ApplyFanCallCount++;
+        if (SimulateStuckFanSpin)
+        {
+            if (!profile.ZeroRpmEnabled)
+            {
+                _sawZeroRpmPulseOff = true;
+            }
+            else if (_sawZeroRpmPulseOff)
+            {
+                SimulateStuckFanSpin = false;
+                _sawZeroRpmPulseOff = false;
+            }
+        }
         _fanState = _fanState with
         {
             ZeroRpmEnabled = profile.ZeroRpmEnabled,

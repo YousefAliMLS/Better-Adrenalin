@@ -244,6 +244,78 @@ public sealed class ProfileOrchestratorFaultTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task StuckFansAtCoolIdle_WhenZeroRpmEnabled_AutomaticallyRearmsZeroRpmAndStopsFans()
+    {
+        using var mock = new MockGpuHardwareAdapter
+        {
+            SimulatedEdgeTempC = 34.0,
+            SimulatedHotspotTempC = 38.0,
+            SimulatedGpuUsagePercent = 0.0
+        };
+        using var repo = new RadeonGuardRepository(_dbPath);
+        var backups = new BackupManager(_dbPath, _backupsDir);
+        var breadcrumbs = new CrashBreadcrumbManager(_breadcrumbPath);
+        var log = new LoggerConfiguration().CreateLogger();
+
+        var running = new List<RunningProcessSnapshot>();
+        int? fgPid = null;
+
+        using var orch = new ProfileOrchestrator(mock, repo, backups, breadcrumbs, log, () => running, () => fgPid, TimeSpan.Zero);
+        await orch.StartAsync();
+
+        var (globalFan, globalTuning) = await repo.EnsureDefaultProfilesAsync(
+            "PCI\\VEN_1002&DEV_73BF&SUBSYS_439E1DA2&REV_C1");
+        await repo.SaveFanProfileAsync(globalFan with { ZeroRpmEnabled = true });
+        await orch.ApplyUserTuningProfileAsync(globalTuning.TuningProfileId, setAsGlobalDefault: true);
+
+        var game = await repo.SaveGameProfileAsync(new GameProfile
+        {
+            Title = "FortniteTest",
+            TuningProfileId = globalTuning.TuningProfileId,
+            ZeroRpmOverride = ZeroRpmOverrideMode.ForceDisabled,
+            IsEnabled = true,
+            LockWhileProcessRunning = true,
+            Executables =
+            [
+                new GameExecutable
+                {
+                    ExeFullPath = @"E:\Fortnite\FortniteClient-Win64-Shipping.exe",
+                    ExeFileName = "fortniteclient-win64-shipping.exe",
+                    Role = ExecutableRole.PrimaryRenderer
+                }
+            ]
+        });
+
+        // 1. Launch game -> Zero RPM turns OFF
+        running.Add(new RunningProcessSnapshot(9999, "fortniteclient-win64-shipping.exe", @"E:\Fortnite\FortniteClient-Win64-Shipping.exe"));
+        fgPid = 9999;
+        await orch.EvaluateGameProfilesAsync();
+        Assert.False(orch.BuildStatusSnapshot().LiveFanState!.ZeroRpmEnabled);
+
+        // 2. Exit game, but simulate driver/SMU bug leaving fans stuck spinning at 950 RPM despite ZeroRpmEnabled = true
+        running.Clear();
+        fgPid = null;
+        mock.SimulateStuckFanSpin = true;
+        await orch.EvaluateGameProfilesAsync();
+        Assert.True(orch.BuildStatusSnapshot().LiveFanState!.ZeroRpmEnabled);
+
+        await Task.Delay(900); // pass internal-apply debounce window
+
+        // 3. 3 verification ticks at cool idle trigger StuckZeroRpmAutoRecover, re-arming Zero RPM and stopping fans (0 RPM)
+        await orch.VerifyAndGuardHardwareTickAsync();
+        await orch.VerifyAndGuardHardwareTickAsync();
+        await orch.VerifyAndGuardHardwareTickAsync();
+        await orch.PollTelemetryTickAsync(includeGameWatcher: false);
+
+        var recoveredSnap = orch.BuildStatusSnapshot();
+        Assert.True(recoveredSnap.LiveFanState!.ZeroRpmEnabled);
+        Assert.Equal(0, recoveredSnap.LatestMetrics!.FanSpeedRpm);
+
+        var audit = await repo.GetAppliedStateLogAsync(10);
+        Assert.Contains(audit, a => a.TriggerReason == "StuckZeroRpmAutoRecover");
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_tempDir, true); } catch { }

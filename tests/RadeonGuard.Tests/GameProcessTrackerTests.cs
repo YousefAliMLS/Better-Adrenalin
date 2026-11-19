@@ -73,4 +73,39 @@ public sealed class GameProcessTrackerTests
         // 4s after exit -> cleanly reverts to Global
         Assert.Null(tracker.Evaluate(withoutGame, 200, [Fortnite], Denylist, t0.AddSeconds(4)));
     }
+
+    [Fact]
+    public void ZombieWindowlessProcessAfterGameClose_OrHungStartupProcess_DoesNotHoldGameProfile()
+    {
+        var tracker = new GameProcessTracker(
+            exitDebounce: TimeSpan.FromSeconds(3),
+            launchWindowGrace: TimeSpan.FromSeconds(25),
+            windowCloseGrace: TimeSpan.FromSeconds(4));
+        var t0 = DateTimeOffset.UtcNow;
+
+        // 1. Stale hung Fortnite process started 2 hours ago with NO window is ignored immediately
+        var staleHung = new List<RunningProcessSnapshot>
+        {
+            new(11300, "FortniteClient-Win64-Shipping.exe", null, HasWindow: false, StartTimeUtc: t0.AddHours(-2))
+        };
+        Assert.Null(tracker.Evaluate(staleHung, null, [Fortnite], Denylist, t0));
+
+        // 2. Real game launches with a visible window, then destroys its window while EAC keeps exe alive
+        var liveWindowed = new List<RunningProcessSnapshot>
+        {
+            new(2200, "FortniteClient-Win64-Shipping.exe", @"E:\Fortnite\FortniteClient-Win64-Shipping.exe", HasWindow: true, StartTimeUtc: t0)
+        };
+        var hungAfterClose = new List<RunningProcessSnapshot>
+        {
+            new(2200, "FortniteClient-Win64-Shipping.exe", @"E:\Fortnite\FortniteClient-Win64-Shipping.exe", HasWindow: false, StartTimeUtc: t0)
+        };
+
+        Assert.NotNull(tracker.Evaluate(liveWindowed, 2200, [Fortnite], Denylist, t0.AddSeconds(5)));
+        // Window just closed -> held during windowCloseGrace (4s) + exitDebounce (3s)
+        Assert.NotNull(tracker.Evaluate(hungAfterClose, null, [Fortnite], Denylist, t0.AddSeconds(10)));
+        Assert.NotNull(tracker.Evaluate(hungAfterClose, null, [Fortnite], Denylist, t0.AddSeconds(13)));
+        Assert.NotNull(tracker.Evaluate(hungAfterClose, null, [Fortnite], Denylist, t0.AddSeconds(15)));
+        // Past 4s windowCloseGrace + 3s exitDebounce -> releases back to Global even while hung exe stays in memory!
+        Assert.Null(tracker.Evaluate(hungAfterClose, null, [Fortnite], Denylist, t0.AddSeconds(19)));
+    }
 }

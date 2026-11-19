@@ -37,6 +37,8 @@ public sealed class ProfileOrchestrator : IDisposable
     private ConflictResolutionPolicy _conflictPolicy = ConflictResolutionPolicy.AutoReapply;
     private DateTimeOffset _lastInternalApplyUtc = DateTimeOffset.MinValue;
     private volatile bool _externalDriftFlagged;
+    private int _stuckZeroRpmTicks;
+    private DateTimeOffset _lastZeroRpmRearmUtc = DateTimeOffset.MinValue;
 
     public const string SettingActiveGlobalTuningId = "ActiveGlobalTuningId";
     public const string SettingActiveGlobalFanId = "ActiveGlobalFanId";
@@ -217,6 +219,57 @@ public sealed class ProfileOrchestrator : IDisposable
         }
         else
         {
+            if (_activeManagedFan.ZeroRpmEnabled)
+            {
+                var metrics = _latestMetrics ?? await _hardware.GetCurrentMetricsAsync(0, ct).ConfigureAwait(false);
+                if (metrics is not null) _latestMetrics = metrics;
+
+                bool coolAndIdleSpinning = metrics is not null &&
+                                           metrics.EdgeTemperatureC <= 45.0 &&
+                                           metrics.HotspotTemperatureC <= 48.0 &&
+                                           metrics.GpuUsagePercent <= 10.0 &&
+                                           metrics.FanSpeedRpm > 100;
+
+                if (coolAndIdleSpinning)
+                {
+                    _stuckZeroRpmTicks++;
+                    if (_stuckZeroRpmTicks >= 3 &&
+                        _conflictPolicy == ConflictResolutionPolicy.AutoReapply &&
+                        (DateTimeOffset.UtcNow - _lastZeroRpmRearmUtc) > TimeSpan.FromSeconds(60))
+                    {
+                        _stuckZeroRpmTicks = 0;
+                        _lastZeroRpmRearmUtc = DateTimeOffset.UtcNow;
+                        _hardwareSyncState = "RECOVERING";
+                        _log.Warning(
+                            "Zero RPM is enabled and GPU is cool/idle (Edge {Edge}C, Hotspot {Hot}C, Usage {Usage}%), yet fans remain spinning at {Rpm} RPM. Re-arming Zero RPM...",
+                            metrics!.EdgeTemperatureC, metrics.HotspotTemperatureC, metrics.GpuUsagePercent, metrics.FanSpeedRpm);
+
+                        await _applyGate.WaitAsync(ct).ConfigureAwait(false);
+                        try
+                        {
+                            _lastInternalApplyUtc = DateTimeOffset.UtcNow;
+                            await _hardware.ApplyFanProfileAsync(0, _activeManagedFan with { ZeroRpmEnabled = false }, ct).ConfigureAwait(false);
+                            await Task.Delay(200, ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _applyGate.Release();
+                        }
+
+                        await ApplyPairInternalAsync(_activeManagedTuning, _activeManagedFan, "StuckZeroRpmAutoRecover", ct).ConfigureAwait(false);
+                        return;
+                    }
+                }
+                else
+                {
+                    _stuckZeroRpmTicks = 0;
+                }
+            }
+            else
+            {
+                _stuckZeroRpmTicks = 0;
+            }
+
             _hardwareSyncState = "VERIFIED";
         }
     }
@@ -246,6 +299,7 @@ public sealed class ProfileOrchestrator : IDisposable
         await _applyGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            _stuckZeroRpmTicks = 0;
             _lastInternalApplyUtc = DateTimeOffset.UtcNow;
             var res = await _hardware.ApplyFanProfileAsync(0, fan, ct).ConfigureAwait(false);
             _hardwareSyncState = res.ApplyStatus;
@@ -439,6 +493,7 @@ public sealed class ProfileOrchestrator : IDisposable
                     DateTimeOffset.UtcNow));
             }
 
+            _stuckZeroRpmTicks = 0;
             _lastInternalApplyUtc = DateTimeOffset.UtcNow;
             var res = await _hardware.ApplyTuningProfileAsync(0, tuning, fan, ct).ConfigureAwait(false);
             _breadcrumbs.Clear();
@@ -516,6 +571,7 @@ public sealed class ProfileOrchestrator : IDisposable
 
     private static IReadOnlyList<RunningProcessSnapshot> CaptureRunningProcesses()
     {
+        var windowedPids = CaptureWindowedProcessIds();
         var list = new List<RunningProcessSnapshot>();
         foreach (var p in Process.GetProcesses())
         {
@@ -523,7 +579,11 @@ public sealed class ProfileOrchestrator : IDisposable
             {
                 string? fullPath = null;
                 try { fullPath = p.MainModule?.FileName; } catch { }
-                list.Add(new RunningProcessSnapshot(p.Id, p.ProcessName + ".exe", fullPath));
+                DateTimeOffset? startUtc = null;
+                try { startUtc = new DateTimeOffset(p.StartTime.ToUniversalTime(), TimeSpan.Zero); } catch { }
+
+                bool hasWindow = p.MainWindowHandle != 0 || windowedPids.Contains(p.Id);
+                list.Add(new RunningProcessSnapshot(p.Id, p.ProcessName + ".exe", fullPath, hasWindow, startUtc));
             }
             catch { }
             finally
@@ -533,6 +593,29 @@ public sealed class ProfileOrchestrator : IDisposable
         }
         return list;
     }
+
+    private static HashSet<int> CaptureWindowedProcessIds()
+    {
+        var pids = new HashSet<int>();
+        EnumWindows((hWnd, _) =>
+        {
+            if (IsWindowVisible(hWnd))
+            {
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid > 0) pids.Add((int)pid);
+            }
+            return true;
+        }, 0);
+        return pids;
+    }
+
+    private delegate bool EnumWindowsProc(nint hWnd, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint hWnd);
 
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();

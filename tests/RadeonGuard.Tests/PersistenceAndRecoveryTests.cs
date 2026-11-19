@@ -232,6 +232,75 @@ public sealed class PersistenceAndRecoveryTests : IDisposable
         Assert.Equal("RX6800XT_NEW", importedFan.GpuHardwareKey);
     }
 
+    [Fact]
+    public async Task ExportImportWattManXml_AndXmlConvertedJson_Succeeds()
+    {
+        using var repo = new RadeonGuardRepository(_dbPath);
+        await repo.InitializeAsync(_backupsDir);
+        var portability = new ProfilePortabilityService(repo);
+
+        var sourceFan = new FanProfile
+        {
+            GpuHardwareKey = "RX6800XT",
+            Name = "XmlCurve",
+            ZeroRpmEnabled = false,
+            Points =
+            [
+                new FanCurvePoint(30, 15),
+                new FanCurvePoint(50, 30),
+                new FanCurvePoint(63, 46),
+                new FanCurvePoint(72, 48),
+                new FanCurvePoint(80, 50)
+            ]
+        };
+
+        string xmlPath = Path.Combine(_tempDir, "wattman_test.xml");
+        await portability.ExportFanProfileToXmlAsync(sourceFan, xmlPath);
+
+        var importedFromXml = await portability.ImportFanProfilesAsync(xmlPath, targetGpuHardwareKey: "RX6800XT");
+        var xmlFan = Assert.Single(importedFromXml);
+        Assert.Equal("wattman_test", xmlFan.Name);
+        Assert.False(xmlFan.ZeroRpmEnabled);
+        Assert.Equal(46, xmlFan.Points[2].FanSpeedPercent);
+
+        // XML converted to JSON format (matching output.json)
+        string xmlConvertedJsonPath = Path.Combine(_tempDir, "output.json");
+        await File.WriteAllTextAsync(xmlConvertedJsonPath, """
+            {
+              "SYSTEM": {
+                "GPU": {
+                  "-DevID": "73BF",
+                  "FEATURE": [
+                    {
+                      "-ID": "22",
+                      "-Enabled": "True",
+                      "STATES": {
+                        "STATE": [
+                          { "-ID": "0", "-Value": "30" }, { "-ID": "1", "-Value": "15" },
+                          { "-ID": "2", "-Value": "50" }, { "-ID": "3", "-Value": "30" },
+                          { "-ID": "4", "-Value": "63" }, { "-ID": "5", "-Value": "46" },
+                          { "-ID": "6", "-Value": "72" }, { "-ID": "7", "-Value": "48" },
+                          { "-ID": "8", "-Value": "80" }, { "-ID": "9", "-Value": "50" }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """);
+
+        var importedFromConverted = await portability.ImportFanProfilesAsync(xmlConvertedJsonPath, targetGpuHardwareKey: "RX6800XT");
+        var convertedFan = Assert.Single(importedFromConverted);
+        Assert.Equal("output", convertedFan.Name);
+        Assert.Equal(48, convertedFan.Points[3].FanSpeedPercent);
+        Assert.Equal(50, convertedFan.Points[4].FanSpeedPercent);
+
+        // History & Backups ImportBundleAsync also handles XML-converted-JSON transparently
+        var (fCount, _, _) = await portability.ImportBundleAsync(xmlConvertedJsonPath);
+        Assert.Equal(1, fCount);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_tempDir, true); } catch { }

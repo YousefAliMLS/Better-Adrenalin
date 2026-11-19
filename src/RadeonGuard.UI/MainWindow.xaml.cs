@@ -47,7 +47,7 @@ public partial class MainWindow : FluentWindow
         return menu;
     }
 
-    private void RestoreFromTray()
+    public void RestoreFromTray()
     {
         Show();
         WindowState = WindowState.Normal;
